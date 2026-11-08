@@ -1,0 +1,12 @@
+FROM docker.io/library/node:22-bookworm
+
+ARG PACKAGES=""
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git ca-certificates curl python3 ${PACKAGES} \
+ && rm -rf /var/lib/apt/lists/* \
+ && corepack enable
+
+USER node
+RUN curl -fsSL https://claude.ai/install.sh | bash
+ENV PATH=/home/node/.local/bin:$PATH
+WORKDIR /work
