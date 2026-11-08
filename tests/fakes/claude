@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+
+def arg(name):
+    if name in sys.argv:
+        return sys.argv[sys.argv.index(name) + 1]
+    return None
+
+
+def emit(event):
+    print(json.dumps(event), flush=True)
+
+
+def tool(name, payload):
+    emit({"type": "assistant", "parent_tool_use_id": None, "message": {
+        "usage": {"input_tokens": 1000},
+        "content": [{"type": "tool_use", "id": "t", "name": name, "input": payload}],
+    }})
+
+
+def finish(structured=None, cost=0.01):
+    event = {"type": "result", "subtype": "success", "is_error": False, "total_cost_usd": cost,
+             "result": "ok"}
+    if structured is not None:
+        event["structured_output"] = structured
+    emit(event)
+
+
+sys.stdin.read()
+model = arg("--model") or ""
+log = os.environ.get("FAKE_CLAUDE_LOG")
+if log:
+    with open(log, "a") as f:
+        f.write(json.dumps({"model": model, "argv": sys.argv[1:], "cwd": os.getcwd()}) + "\n")
+
+if model == "fake-builder":
+    mode = os.environ.get("FAKE_BUILDER", "ok")
+    root = Path.cwd()
+    result = {"status": "done", "summary": "s", "hypothesis": f"h-{time.time()}", "evidence": ""}
+    if mode == "ok":
+        tool("Write", {"file_path": "feature.txt"})
+        (root / "feature.txt").write_text("pronto\n")
+    elif mode == "binary":
+        (root / "feature.txt").write_text("pronto\n")
+        (root / "tests" / "__pycache__").mkdir(exist_ok=True)
+        (root / "tests" / "__pycache__" / "x.pyc").write_bytes(b"\xe1\x00\xff")
+        (root / "tests" / "dado.bin").write_bytes(b"\xe1\x00\xff")
+    elif mode == "wrong":
+        tool("Write", {"file_path": "feature.txt"})
+        (root / "feature.txt").write_text("errado\n")
+    elif mode == "blocked":
+        result = {"status": "blocked", "summary": "", "hypothesis": "", "evidence": "spec contraditória"}
+    elif mode == "delete_test":
+        (root / "tests" / "test_base.py").unlink()
+        (root / "feature.txt").write_text("pronto\n")
+    elif mode == "sensitive":
+        (root / "docs").mkdir(exist_ok=True)
+        (root / "docs" / "nota.md").write_text("x\n")
+        (root / "feature.txt").write_text("pronto\n")
+    elif mode == "loop":
+        for _ in range(10):
+            tool("Bash", {"command": "ls"})
+        time.sleep(30)
+    (root / ".loopi-result.json").write_text(json.dumps(result))
+    finish()
+elif model == "fake-planner":
+    finish({"issues": [
+        {"key": "a", "title": "Criar feature", "description": "d",
+         "criteria": [{"description": "existe", "command": "test -f feature.txt"}],
+         "depends_on": [], "paths": ["feature.txt"]},
+        {"key": "b", "title": "Depois", "description": "d", "criteria": [],
+         "depends_on": ["a"], "paths": ["outro.txt"]},
+    ]})
+elif model == "fake-judge":
+    finish({"approved": os.environ.get("FAKE_JUDGE", "yes") == "yes", "reasons": ["motivo"]})
+elif model == "fake-founder":
+    finish({"setup": "", "quick": "true", "full": "", "security": "", "container_packages": []})
+else:
+    finish()
